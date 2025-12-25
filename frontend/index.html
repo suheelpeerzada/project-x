@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>project-x</title>
+</head>
+<body>
+  <h3>project-x</h3>
+
+  <input id="msg" placeholder="Type something..." />
+  <button onclick="send()">Send</button>
+
+  <pre id="out"></pre>
+
+  <script>
+    async function send() {
+      const message = document.getElementById("msg").value;
+
+      const res = await fetch("http://127.0.0.1:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message })
+      });
+
+      const data = await res.json();
+      document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
