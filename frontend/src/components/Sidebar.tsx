@@ -37,6 +37,7 @@ interface SidebarProps {
 
   onRequestModelSelect: (id: string) => void;
   onOpenSettings: () => void;
+  onAddModel: () => void;
 }
 
 type Tab = 'models' | 'history';
@@ -51,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   history,
   onRequestModelSelect,
   onOpenSettings,
+  onAddModel,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('models');
 
@@ -101,9 +103,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ================= Content ================= */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* -------- Models -------- */}
+                {/* -------- Models -------- */}
         {activeTab === 'models' && (
           <div className="py-2">
+            {/* Header */}
             <div className="px-4 py-4">
               <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
                 <HardDrive size={14} />
@@ -113,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
+            {/* Model list */}
             {models.length === 0 ? (
               <div className="px-5 py-6 text-sm text-zinc-500 dark:text-zinc-400">
                 No models available
@@ -157,6 +161,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               ))
             )}
+
+            {/* -------- Add Model -------- */}
+            <div className="px-5 py-3">
+              <button
+                onClick={onAddModel}
+                className="w-full flex items-center gap-2 text-sm
+                          text-zinc-500 hover:text-zinc-700
+                          dark:text-zinc-400 dark:hover:text-zinc-300
+                          px-3 py-2 rounded-md
+                          border border-dashed
+                          border-zinc-300 dark:border-zinc-700
+                          hover:bg-zinc-100 dark:hover:bg-zinc-900"
+              >
+                <span className="text-lg leading-none">+</span>
+                <span>Add model</span>
+              </button>
+
+              <p className="mt-2 text-[10px] text-zinc-400">
+                Model management coming soon
+              </p>
+            </div>
           </div>
         )}
 

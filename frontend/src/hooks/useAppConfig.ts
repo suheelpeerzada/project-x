@@ -39,6 +39,13 @@ export function useAppConfig() {
     api_key?: string;
   }) => {
     await api.setup(payload);
+    
+    try{
+      await api.verifyConfig();
+    } catch {
+      //auth stays false, chat remains locked
+    }
+
     await refresh();
   };
 

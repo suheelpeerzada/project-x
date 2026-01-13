@@ -34,15 +34,28 @@ function App() {
     reset: resetConfig,
   } = useAppConfig();
 
-  const [models, setModels] = useState<Model[]>([]);
+  const models: Model[] = state?.model
+  ? [
+      {
+        id: 'active',
+        name: state.display_name ?? state.model,
+      },
+    ]
+  : [];
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ✅ SINGLE SOURCE OF TRUTH
-  const chatEnabled = state?.auth_ok === true;
+  const chatEnabled =
+  state?.configured === true &&
+  state?.auth_ok === true;
+
   const chatLocked = !chatEnabled;
+
+
 
   const contextLoad = 0;
 
@@ -55,18 +68,7 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load models for active provider
-  useEffect(() => {
-    if (!state?.provider) {
-      setModels([]);
-      return;
-    }
 
-    api
-      .getModels(state.provider)
-      .then(setModels)
-      .catch(() => setModels([]));
-  }, [state?.provider]);
 
   /* =========================
      Handlers
@@ -86,7 +88,6 @@ function App() {
 
     try {
       const res = await api.chat({
-        model_id: state.model,
         messages: [{ role: 'user', content }],
       });
 
@@ -143,13 +144,14 @@ function App() {
     <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-200 overflow-hidden">
       {/* Sidebar */}
       <div className="hidden md:block h-full">
-        <Sidebar
-          models={models}
-          activeModelId={state.model}
-          history={[]}
-          onRequestModelSelect={handleRequestModelSelect}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-        />
+      <Sidebar
+        models={models}
+        activeModelId="active"
+        history={[]}
+        onRequestModelSelect={handleRequestModelSelect}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onAddModel={() => setIsSettingsOpen(true)}   // ✅ for now
+      />
       </div>
 
       {/* Main */}
@@ -181,7 +183,7 @@ function App() {
           <div
             className={cn(
               'max-w-4xl mx-auto px-6 py-8 transition-all',
-              chatLocked && 'blur-sm pointer-events-none select-none'
+              chatLocked && 'blur-md opacity-60 pointer-events-none select-none'
             )}
           >
             {messages.map((msg) => (
@@ -197,7 +199,7 @@ function App() {
                 <div className="text-3xl mb-3">🔒</div>
                 <h3 className="text-sm font-semibold mb-1">Chat disabled</h3>
                 <p className="text-xs text-zinc-500">
-                  Your API key is invalid or expired.
+                  Chat is temporarily disable due to an authentication error. Try checking your API key.
                 </p>
                 <p className="text-[11px] mt-2 text-zinc-400">
                   Open <strong>Settings</strong> to update your API key.

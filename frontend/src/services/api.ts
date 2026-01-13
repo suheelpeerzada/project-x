@@ -27,7 +27,7 @@ export const api = {
       provider: string | null;
       model: string | null;
       display_name: string | null;
-      auth_ok: boolean;
+      auth_ok: boolean | null;
       api_key_present: boolean;
     }>('/status'),
 
@@ -70,7 +70,6 @@ export const api = {
 
   // Chat
   chat: async (payload: {
-    model_id: string;
     messages: { role: string; content: string }[];
   }) => {
     try {

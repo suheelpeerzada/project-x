@@ -8,7 +8,6 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    model_id: str
     messages: List[ChatMessage]
 
 

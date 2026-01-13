@@ -13,6 +13,7 @@ def chat(req: ChatRequest):
     Main chat endpoint.
     Backend is authoritative:
     - Uses stored config
+    - Uses active model from registry
     - Updates auth_ok
     """
 
@@ -29,21 +30,27 @@ def chat(req: ChatRequest):
             detail="Empty message"
         )
 
-    # Ensure requested model matches active model
-    active_model = config.get("model")
-    if req.model_id != active_model:
+    # -------------------------
+    # Resolve active model
+    # -------------------------
+    models = config.get("models")
+    active_id = config.get("active_model_id")
+
+    if not models or not active_id or active_id not in models:
         raise HTTPException(
             status_code=400,
-            detail="Requested model does not match active model"
+            detail="Active model not configured"
         )
+
+    active_model = models[active_id]
 
     last_message = req.messages[-1].content
 
     try:
         reply = call_llm(
-            provider=config["provider"],
-            model=config["model"],
-            api_key=config.get("api_key"),
+            provider=active_model["provider"],
+            model=active_model["model"],
+            api_key=active_model.get("api_key"),
             message=last_message,
         )
 
@@ -51,21 +58,18 @@ def chat(req: ChatRequest):
         update_config({"auth_ok": True})
         system_state.auth_ok = True
 
-
         return ChatResponse(content=reply)
 
     except HTTPException:
-        # Let FastAPI HTTP errors pass through
+        # Provider / request errors
         update_config({"auth_ok": False})
         system_state.auth_ok = False
-
         raise
 
     except Exception as e:
-        # Auth / provider / quota failures end up here
+        # Auth / provider / quota failures
         update_config({"auth_ok": False})
         system_state.auth_ok = False
-
 
         raise HTTPException(
             status_code=401,
