@@ -8,6 +8,7 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { ModelPicker, AddModelPayload } from './ModelPicker';
 
 /* =========================
    Types
@@ -18,18 +19,26 @@ interface SettingsModel {
   name: string;
 }
 
+type Tab = 'general' | 'models';
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+
+  /** Which tab to show when the modal opens */
+  initialTab?: Tab;
 
   currentModelId: string | null;
   models: SettingsModel[];
 
   onSave: (payload: { model_id: string; api_key?: string }) => Promise<void>;
   onReset: () => Promise<void>;
-}
 
-type Tab = 'general' | 'models';
+  /** Switch the active model (App verifies it afterwards) */
+  onSwitchModel: (modelId: string) => Promise<void>;
+  /** Add a model picked in the live picker */
+  onAddModel: (payload: AddModelPayload) => Promise<void>;
+}
 
 /* =========================
    Component
@@ -38,10 +47,13 @@ type Tab = 'general' | 'models';
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
+  initialTab = 'general',
   currentModelId,
   models,
   onSave,
   onReset,
+  onSwitchModel,
+  onAddModel,
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('general');
 
@@ -50,6 +62,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   /* =========================
      Effects
@@ -60,9 +73,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setModelId(currentModelId);
       setApiKey('');
       setShowResetConfirm(false);
-      setActiveTab('general');
+      setSaveError(null);
+      setActiveTab(initialTab);
     }
-  }, [isOpen, currentModelId]);
+  }, [isOpen, currentModelId, initialTab]);
 
   if (!isOpen) return null;
 
@@ -75,18 +89,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!modelId) return;
 
     setIsSaving(true);
+    setSaveError(null);
     try {
-      const payload: { model_id: string; api_key?: string } = {
-        model_id: modelId,
-      };
-      
-      if (apiKey.trim()) {
-        payload.api_key = apiKey.trim();
+      const switched = modelId !== currentModelId;
+
+      // 1) Switch first, so a new key applies to the model the user picked
+      if (switched) {
+        await onSwitchModel(modelId);
       }
-      
-      await onSave(payload);
-      
+
+      // 2) Save key if provided; with no changes at all, Save re-verifies
+      if (apiKey.trim() || !switched) {
+        const payload: { model_id: string; api_key?: string } = {
+          model_id: modelId,
+        };
+        if (apiKey.trim()) {
+          payload.api_key = apiKey.trim();
+        }
+        await onSave(payload);
+      }
+
       onClose();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
       setIsSaving(false);
     }
@@ -209,7 +234,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       placeholder="Leave blank to keep current key"
                       className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-500/20 focus:border-zinc-500 dark:text-zinc-200 font-mono"
                     />
+                    <p className="text-[11px] text-zinc-500">
+                      Applies to the selected model. Saving with no changes
+                      re-verifies the current key.
+                    </p>
                   </div>
+
+                  {saveError && (
+                    <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">
+                      {saveError}
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
@@ -265,13 +300,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
 
             {activeTab === 'models' && (
-              <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-200">
-                  Model Management
-                </h3>
-                <p className="text-xs text-zinc-500 mt-1">
-                  Model registry management will be available in a future update.
-                </p>
+              <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-200">
+                    Add a model
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Pick a provider and load the models currently available to
+                    your key. Switch to a new model from the sidebar or the
+                    General tab.
+                  </p>
+                </div>
+
+                <ModelPicker onAdd={onAddModel} />
+
+                <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                  <h4 className="text-xs font-medium text-zinc-500 mb-2">
+                    REGISTERED MODELS ({models.length})
+                  </h4>
+                  <ul className="space-y-1">
+                    {models.map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300"
+                      >
+                        <span className="truncate">{m.name}</span>
+                        {m.id === currentModelId && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                            Active
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
           </div>

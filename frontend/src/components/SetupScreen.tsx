@@ -51,7 +51,8 @@ export const SetupScreen: React.FC= () => {
     e.preventDefault();
     // F1 ends here — model selection comes next
   };
-  
+
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('http://127.0.0.1:8000/providers')
@@ -250,6 +251,7 @@ export const SetupScreen: React.FC= () => {
                     </p>
                   </div>
               )}
+              {setupError && <p className="text-xs text-red-500">{setupError}</p>}
               <button
                 type="button"
                 disabled={
@@ -260,16 +262,21 @@ export const SetupScreen: React.FC= () => {
                 }
                 onClick={async () => {
                   setSavingConfig(true);
+                  setSetupError(null);
                   try {
-                    await fetch('http://127.0.0.1:8000/config/setup', {
+                    const res = fetch('http://127.0.0.1:8000/config/setup', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         provider: selectedProvider,
                         model_id: selectedModel,
-                        api_key: apiKey || null,
+                        api_key: apiKey,
                       }),
                     });
+                    if(!(await res).ok){
+                      setSetupError('Setup failed (${res.status}): ${await res.text()}');
+                      return;
+                    }
                     window.location.reload();
                   } finally {
                     setSavingConfig(false);

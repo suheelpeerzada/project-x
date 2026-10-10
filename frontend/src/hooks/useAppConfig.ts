@@ -8,6 +8,8 @@ export interface SystemState {
   display_name: string | null;
   auth_ok: boolean | null;
   api_key_present: boolean;
+  chat_enabled: boolean;
+  last_error: {code: string; message: string} | null;
 }
 
 export function useAppConfig() {
@@ -39,8 +41,8 @@ export function useAppConfig() {
     api_key?: string;
   }) => {
     await api.setup(payload);
-    
-    try{
+
+    try {
       await api.verifyConfig();
     } catch {
       //auth stays false, chat remains locked
@@ -55,17 +57,16 @@ export function useAppConfig() {
     api_key?: string;
   }) => {
     await api.updateConfig(payload);
-  
+
+    // verifyConfig already calls refresh internally
     try {
-      await api.verifyConfig(); // ← THIS IS THE FIX
-    } catch {
-      // auth stays false, UI will lock chat
-    }
-  
+      await api.verifyConfig();
+    } catch { }
+
     await refresh();
   };
-  
-  
+
+
 
   // 🔹 Full reset
   const reset = async () => {

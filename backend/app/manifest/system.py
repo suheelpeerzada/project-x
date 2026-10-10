@@ -19,6 +19,7 @@ class SystemState:
         # Phase 1 additions (internal only)
         self._active_model_id: Optional[str] = None
         self._models: Dict[str, Dict[str, Any]] = {}
+        self.last_error: Optional[dict] = None 
 
     def load(self) -> None:
         """
@@ -84,11 +85,12 @@ class SystemState:
         self.model = model_entry.get("model")
         self.api_key_present = bool(model_entry.get("api_key"))
         self.auth_ok = model_entry.get("auth_ok")
+        self.last_error = model_entry.get("last_error")
 
         self.configured = bool(
             self.provider and
             self.model and
-            self.api_key_present
+            (self.api_key_present or self.provider == "local")
         )
 
     def _reset(self) -> None:
@@ -99,6 +101,7 @@ class SystemState:
         self.auth_ok = None
         self._active_model_id = None
         self._models = {}
+        self.last_error: Optional[dict] = None 
 
     def as_dict(self):
         return {
@@ -108,6 +111,9 @@ class SystemState:
             "display_name": self.display_name(),
             "api_key_present": self.api_key_present,
             "auth_ok": self.auth_ok,
+            "chat_enabled": self.configured and self.auth_ok is True
+                and (self.last_error or {}).get("code") != "model_unavailable",
+            "last_error": self.last_error,
         }
 
     def display_name(self) -> str | None:

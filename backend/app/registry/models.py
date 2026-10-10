@@ -5,14 +5,8 @@ from app.persistence.model_store import load_user_models
 # Static, validated model lists per provider adapter
 _PROVIDER_MODELS: dict[str, List[Dict[str, str]]] = {
     "groq": [
-        {
-            "id": "llama-3.1-8b-instant",
-            "name": "LLaMA 3.1 (8B Instant)",
-        },
-        {
-            "id": "llama-3.1-70b-versatile",
-            "name": "LLaMA 3.1 (70B Versatile)",
-        },
+        {"id": "openai/gpt-oss-20b", "name": "GPT-OSS 20B"},
+        {"id": "openai/gpt-oss-120b", "name": "GPT-OSS 120B"},
     ],
     "openai": [
         {

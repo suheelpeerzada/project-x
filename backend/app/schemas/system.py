@@ -9,3 +9,5 @@ class SystemState(BaseModel):
     display_name: Optional[str] = None
     auth_ok: Optional[bool] = None
     api_key_present: Optional[bool] = None  # ← ADD
+    last_error: Optional[dict] = None
+    chat_enabled: bool = False

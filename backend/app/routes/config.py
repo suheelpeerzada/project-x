@@ -12,7 +12,7 @@ from app.persistence.config_store import (
     update_active_model,
 )
 from app.manifest.system import system_state
-from app.services.llm import call_llm
+from app.services.llm import call_llm, verify_model
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -68,17 +68,14 @@ def update_config_route(payload: UpdateConfigRequest):
 
     patch = {}
 
-    if payload.model_id is not None:
-        patch["model"] = payload.model_id
+    # if payload.model_id is not None:
+    #     patch["model"] = payload.model_id
 
     if payload.api_key is not None and payload.api_key.strip():
-        active = get_active_model(config)
-        if not active:
-            raise HTTPException(status_code=400, detail="Active model not found")
-
-        if payload.api_key.strip() != active.get("api_key"):
-            patch["api_key"] = payload.api_key.strip()
-            patch["auth_ok"] = None
+        # Always update API key if user provides one
+        patch["api_key"] = payload.api_key.strip()
+        patch["auth_ok"] = None
+        patch["last_error"]: None
 
     if patch:
         update_active_model(config, patch)
@@ -106,23 +103,28 @@ def verify_api_key():
         raise HTTPException(status_code=400, detail="Active model not found")
 
     try:
-        # Cheap validation call
-        call_llm(
-            provider=active["provider"],
-            model=active["model"],
-            api_key=active.get("api_key"),
-            message="ping",
-        )
-
-        update_active_model(config, {"auth_ok": True})
+        verify_model(active["provider"], active["model"], active.get("api_key"))
+        update_active_model(config, {"auth_ok": True, "last_error": None})
         system_state.load()
-        return {"ok": True}
+        return {"ok": True, "verified": True}
 
-    except HTTPException:
-        update_active_model(config, {"auth_ok": False})
-        system_state.load()
-        raise
-
+    except HTTPException as e:
+        if e.status_code == 401:
+            update_active_model(config, {
+                "auth_ok": False,
+                "last_error": {"code": "invalid_key", "message": e.detail},
+            })
+            system_state.load()
+            raise
+        if e.status_code == 404:
+            # Key is valid, model is gone
+            update_active_model(config, {
+                "auth_ok": True,
+                "last_error": {"code": "model_unavailable", "message": e.detail},
+            })
+            system_state.load()
+            return {"ok": True, "verified": False, "detail": e.detail}
+        return {"ok": True, "verified": False, "detail": e.detail}
 
 @router.post("/reset")
 def reset_system_config():
