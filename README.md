@@ -82,6 +82,14 @@ To remove your data, use **Reset Config** in Settings and delete the files above
 - **Browser blocks requests (CORS):** the backend only accepts requests from
   its allowed local origins. Use the address the frontend prints.
 
+## License
+
+Project-X is source-available under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
+You are free to use, modify and share it for noncommercial purposes. Commercial
+use, including selling it, is not permitted without a separate agreement with
+the copyright holder. See the [LICENSE](LICENSE) file.
+
 ## Security note
 
 This app is designed to run on your own computer for one user. Do not expose
