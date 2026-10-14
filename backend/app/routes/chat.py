@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.persistence.config_store import load_config, update_active_model
 from app.services.llm import call_llm, stream_llm
 from app.manifest.system import system_state
 from app.persistence import history_store
-router = APIRouter()
+from app.security import chat_limiter, provider_limiter, config_limiter
 
+router = APIRouter()
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
@@ -53,6 +54,7 @@ def chat(req: ChatRequest):
             model=active_model["model"],
             api_key=active_model.get("api_key"),
             message=last_message,
+            base_url=active_model.get("base_url"),
         )
 
         # Only write to disk when state actually changes
@@ -96,7 +98,7 @@ def _persist_reply(stream, conversation_id: str, model: str):
             history_store.add_message(conversation_id, "assistant", text, model)
 
 
-@router.post("/chat/stream")
+@router.post("/chat/stream", dependencies=[Depends(chat_limiter)])
 def chat_stream(req: ChatRequest):
     config = load_config()
     if not config:
@@ -129,6 +131,7 @@ def chat_stream(req: ChatRequest):
             active_model["model"],
             active_model.get("api_key"),
             messages,
+            base_url=active_model.get("base_url"),
         )
     except HTTPException as e:
         if e.status_code == 401:

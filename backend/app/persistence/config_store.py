@@ -187,18 +187,19 @@ def update_active_model(config: Dict[str, Any], patch: Dict[str, Any]) -> Dict[s
 # Phase 2 helpers (model management)
 # ----------------------------
 
-def get_model_by_provider_and_name(config: Dict[str, Any], provider: str, model: str):
+def get_model_by_provider_and_name(config: Dict[str, Any], provider: str, model: str, base_url=None):
     """
     Return (model_id, model_entry) if provider+model exists, else None.
     """
     models = config.get("models", {})
     for mid, entry in models.items():
-        if entry.get("provider") == provider and entry.get("model") == model:
+        if (entry.get("provider") == provider
+           and entry.get("model") == model
+           and (entry.get("base_url") or None) == (base_url or None)):
             return mid, entry
-    return None
 
 
-def overwrite_model(config: Dict[str, Any], model_id: str, provider: str, model: str, api_key: str):
+def overwrite_model(config: Dict[str, Any], model_id: str, provider: str, model: str, api_key: str, base_url=None):
     """
     Overwrite an existing model entry but keep the same UUID.
     Reset auth_ok = False for first-time usage.
@@ -209,11 +210,13 @@ def overwrite_model(config: Dict[str, Any], model_id: str, provider: str, model:
         "api_key": api_key,
         "auth_ok": None,
     }
+    if base_url: 
+        config["models"][model_id]["base_url"] = base_url
     save_config(config)
     return model_id
 
 
-def insert_new_model(config: Dict[str, Any], provider: str, model: str, api_key: str):
+def insert_new_model(config: Dict[str, Any], provider: str, model: str, api_key: str, base_url=None):
     """
     Create a new model entry with a fresh UUID and auth_ok=False.
     """
@@ -225,6 +228,8 @@ def insert_new_model(config: Dict[str, Any], provider: str, model: str, api_key:
         "api_key": api_key,
         "auth_ok": None,
     }
+    if base_url: 
+        config["models"][new_id]["base_url"] = base_url
     save_config(config)
     return new_id
 

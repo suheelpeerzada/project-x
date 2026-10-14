@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.security import chat_limiter, provider_limiter, config_limiter, validate_base_url
 from pydantic import BaseModel
 from typing import Optional
 import uuid
@@ -16,7 +17,6 @@ from app.services.llm import call_llm, verify_model
 
 router = APIRouter(prefix="/config", tags=["config"])
 
-
 class UpdateConfigRequest(BaseModel):
     model_id: Optional[str] = None
     api_key: Optional[str] = None
@@ -26,6 +26,7 @@ class SetupConfigRequest(BaseModel):
     provider: str
     model_id: str
     api_key: str
+    base_url: Optional[str] = None
 
 
 @router.post("/setup")
@@ -36,18 +37,20 @@ def setup_config(payload: SetupConfigRequest):
     """
     model_uuid = str(uuid.uuid4())
 
-    config = {
-        "models": {
-            model_uuid: {
-                "provider": payload.provider,
-                "model": payload.model_id,
-                "api_key": payload.api_key.strip(),
-                "auth_ok": None,
-            }
-        },
-        "active_model_id": model_uuid,
+    entry = {
+        "provider": payload.provider,
+        "model": payload.model_id,
+        "api_key": payload.api_key.strip(),
+        "auth_ok": None,
+        "last_error": None,
     }
+    if payload.provider == "custom-openai":
+        try:
+            entry["base_url"] = validate_base_url(payload.base_url or "")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base URL: {e}")
 
+    config = {"models": {model_uuid: entry}, "active_model_id": model_uuid}
     save_config(config)
     system_state.load()
     return {"ok": True}
@@ -75,7 +78,7 @@ def update_config_route(payload: UpdateConfigRequest):
         # Always update API key if user provides one
         patch["api_key"] = payload.api_key.strip()
         patch["auth_ok"] = None
-        patch["last_error"]: None
+        patch["last_error"]= None
 
     if patch:
         update_active_model(config, patch)
@@ -84,7 +87,7 @@ def update_config_route(payload: UpdateConfigRequest):
     return {"ok": True}
 
 
-@router.post("/verify")
+@router.post("/verify", dependencies=[Depends(config_limiter)])
 def verify_api_key():
     """
     Explicit API key verification.
@@ -103,7 +106,7 @@ def verify_api_key():
         raise HTTPException(status_code=400, detail="Active model not found")
 
     try:
-        verify_model(active["provider"], active["model"], active.get("api_key"))
+        verify_model(active["provider"], active["model"], active.get("api_key"), active.get("base_url"))
         update_active_model(config, {"auth_ok": True, "last_error": None})
         system_state.load()
         return {"ok": True, "verified": True}

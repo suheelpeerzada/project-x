@@ -1,6 +1,7 @@
 import requests
 from fastapi import HTTPException
 import json
+from app.security import validate_base_url
 
 
 # ---- Provider endpoints ----
@@ -18,6 +19,45 @@ _AUTH_CHECK_URLS = {
     "openai": OPENAI_MODELS_URL,
     "huggingface": HF_WHOAMI_URL,
 }
+CUSTOM = "custom-openai"
+
+def _custom_url(base_url, path: str) -> str:
+    if not base_url:
+        raise HTTPException(status_code=400, detail="This model needs a base URL")
+    try:
+        root = validate_base_url(base_url)      # SSRF guard, re-checked on every call
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid base URL: {e}")
+    return f"{root}{path}"
+
+def _headers(api_key) -> dict:
+    h = {"Content-Type": "application/json"}
+    if api_key:                                  # local servers usually need no key
+        h["Authorization"] = f"Bearer {api_key}"
+    return h
+
+def _server_message(r) -> str:
+    try:
+        err = r.json().get("error")
+        msg = err.get("message") if isinstance(err, dict) else err
+        return str(msg or "")[:200]
+    except Exception:
+        return ""
+
+def _raise_for_custom(r, model: str) -> None:
+    if r.ok:
+        return
+    if r.status_code in (401, 403):
+        raise HTTPException(status_code=401, detail="The endpoint rejected your API key")
+    if r.status_code in (400, 404, 422):
+        said = _server_message(r)
+        raise HTTPException(
+            status_code=404,
+            detail=f"The endpoint could not use model '{model}'"
+                   + (f" (it said: {said})" if said else "")
+                   + ". Check the model name and base URL.",
+        )
+    raise HTTPException(status_code=502, detail=f"Endpoint error: HTTP {r.status_code}")
 
 MAX_REPLY_TOKENS = 4096        # hard cap per reply (hidden reasoning counts too)
 INPUT_CHAR_BUDGET = 14000      # ≈3.5K tokens of history per request (see note below)
@@ -63,7 +103,7 @@ def check_auth(provider: str, api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail=f"Missing {provider} API key")
 
     try:
-        r = requests.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=15)
+        r = requests.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=15, allow_redirects=False)
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Could not reach {provider}: {type(e).__name__}")
 
@@ -74,7 +114,7 @@ def check_auth(provider: str, api_key: str | None) -> None:
     
 # ---- Main dispatcher ----
 
-def call_llm(provider: str, model: str, api_key: str | None, message: str) -> str:
+def call_llm(provider: str, model: str, api_key: str | None, message: str, base_url: str | None = None) -> str:
     try:
         if provider == "groq":
             return _call_groq(model, api_key, message)
@@ -84,6 +124,8 @@ def call_llm(provider: str, model: str, api_key: str | None, message: str) -> st
             return _call_huggingface(model, api_key, message)
         if provider == "local":
             return _call_local(model, message)
+        if provider == CUSTOM: 
+            return _call_custom(model, api_key, message, base_url)
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Network error: {type(e).__name__}")
 
@@ -148,7 +190,7 @@ def _call_openai(model: str, api_key: str | None, message: str) -> str:
     if r.status_code == 404 or "model_not_found" in r.text:
         raise HTTPException(
             status_code=404,
-            detail=f"Model '{model}' is no longer available on Groq. Pick another model.",
+            detail=f"Model '{model}' is no longer available on OpenAI. Pick another model.",
         )
 
     if not r.ok:
@@ -160,6 +202,14 @@ def _call_openai(model: str, api_key: str | None, message: str) -> str:
     data = r.json()
     return data["choices"][0]["message"]["content"]
 
+def _call_custom(model: str, api_key: str | None, message: str, base_url: str | None) -> str:
+    r = requests.post(
+        _custom_url(base_url, "/chat/completions"),
+        json={"model": model, "messages": [{"role": "user", "content": message}]},
+        headers=_headers(api_key), timeout=30, allow_redirects=False,
+    )
+    _raise_for_custom(r, model)
+    return r.json()["choices"][0]["message"]["content"]
 
 def _call_huggingface(model: str, api_key: str | None, message: str) -> str:
     if not api_key:
@@ -228,7 +278,7 @@ def list_models(provider: str, api_key: str | None) -> list[dict]:
     if not api_key:
         raise HTTPException(status_code=401, detail=f"Missing {provider} API key")
     try:
-        r = requests.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=15)
+        r = requests.get(url, headers={"Authorization": f"Bearer {api_key}"}, timeout=15,allow_redirects=False)
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Could not reach {provider}: {type(e).__name__}")
     if r.status_code == 401:
@@ -247,8 +297,20 @@ def list_models(provider: str, api_key: str | None) -> list[dict]:
     return sorted(out, key=lambda m: m["id"])
 
 
-def verify_model(provider: str, model: str, api_key: str | None) -> None:
+def verify_model(provider: str, model: str, api_key: str | None, base_url: str | None = None) -> None:
     """401 = bad key. 404 = key fine but model gone. Others = couldn't verify."""
+    if provider == CUSTOM:
+        # /models is not universal, so verify with one tiny real request.
+        try:
+            r = requests.post(
+                _custom_url(base_url, "/chat/completions"),
+                json={"model": model, "messages": [{"role": "user", "content": "Reply with OK."}]},
+                headers=_headers(api_key), timeout=30, allow_redirects=False,
+            )
+        except requests.RequestException as e:
+            raise HTTPException(status_code=503, detail=f"Could not reach the endpoint: {type(e).__name__}")
+        _raise_for_custom(r, model)
+        return
     if provider in _OPENAI_COMPAT_MODELS:
         ids = {m["id"] for m in list_models(provider, api_key)}
         if model not in ids:
@@ -262,45 +324,55 @@ def verify_model(provider: str, model: str, api_key: str | None) -> None:
 _STREAM_URLS = {"groq": GROQ_CHAT_URL, "openai": OPENAI_CHAT_URL}
 
 
-def stream_llm(provider: str, model: str, api_key: str | None, messages: list[dict]):
+def stream_llm(provider: str, model: str, api_key: str | None, messages: list[dict], base_url: str | None = None):
     """Returns an iterator of text chunks. Errors before the first token raise HTTPException."""
-    url = _STREAM_URLS.get(provider)
+    if provider == CUSTOM:
+        url = _custom_url(base_url, "/chat/completions")
+    else:
+        url = _STREAM_URLS.get(provider)
     if not url:
         raise HTTPException(status_code=501, detail=f"Streaming not supported for {provider}")
-    if not api_key:
+    if not api_key and provider != CUSTOM:
         raise HTTPException(status_code=401, detail=f"Missing {provider} API key")
 
     payload = {
         "model": model,
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + _trim_history(messages),
         "stream": True,
-        "max_completion_tokens": MAX_REPLY_TOKENS,
+        ("max_tokens" if provider == CUSTOM else "max_completion_tokens"): MAX_REPLY_TOKENS,
     }
 
     try:
         r = requests.post(
             url,
             json=payload,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            headers=_headers(api_key),
             stream=True,
             timeout=(10, 60),
         )
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Network error: {type(e).__name__}")
 
-    if r.status_code == 401:
-        r.close()
-        raise HTTPException(status_code=401, detail=f"Invalid {provider} API key")
-    if r.status_code == 404 or "model_not_found" in (r.text if not r.ok else ""):
-        r.close()
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model '{model}' is no longer available on {provider}. Pick another model.",
-        )
-    if not r.ok:
-        detail = f"{provider} error: HTTP {r.status_code}"
-        r.close()
-        raise HTTPException(status_code=502, detail=detail)
+    if provider == CUSTOM:
+        try:
+            _raise_for_custom(r, model)
+        finally:
+            if not r.ok:
+                r.close()
+    else:
+        if r.status_code == 401:
+            r.close()
+            raise HTTPException(status_code=401, detail=f"Invalid {provider} API key")
+        if r.status_code == 404 or "model_not_found" in (r.text if not r.ok else ""):
+            r.close()
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model '{model}' is no longer available on {provider}. Pick another model.",
+            )
+        if not r.ok:
+            detail = f"{provider} error: HTTP {r.status_code}"
+            r.close()
+            raise HTTPException(status_code=502, detail=detail)
 
     def gen():
         try:

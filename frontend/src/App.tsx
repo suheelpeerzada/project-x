@@ -94,6 +94,8 @@ function App() {
       setModels(list);
       const active = list.find((m) => m.is_active);
       setActiveModelId(active ? active.id : null);
+    }).catch(() => {
+      /* keep the previous list if the backend is briefly unreachable */
     });
   }, [state]);
 
@@ -246,6 +248,7 @@ function App() {
       provider: payload.provider,
       model: payload.model,
       api_key: payload.apiKey,
+      base_url: payload.baseUrl,
     });
     await reloadModels();
   };

@@ -35,15 +35,23 @@ export const SetupScreen: React.FC= () => {
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [showAddModel, setShowAddModel] = useState(false);
-  const ADD_MODEL_PROVIDERS = ['custom-openai', 'local'];
-  const [newModelId, setNewModelId] = useState('');
-  const [newModelName, setNewModelName] = useState('');
-  const [newBaseUrl, setNewBaseUrl] = useState('');
-  const [addingModel, setAddingModel] = useState(false);
-  const API_KEY_REQUIRED_PROVIDERS = ['groq', 'openai', 'huggingface', 'custom-openai'];
+  const CUSTOM = 'custom-openai';
+  const MANUAL = '__manual__';
+  const API_KEY_REQUIRED_PROVIDERS = ['groq', 'openai'];
+  const [manualModel, setManualModel] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+
+  const isCustom = selectedProvider === CUSTOM;
+  const modelToUse =
+    isCustom || selectedModel === MANUAL ? manualModel.trim() : (selectedModel ?? '');
+  const canFinish =
+    !!selectedProvider &&
+    !!modelToUse &&
+    (!isCustom || !!baseUrl.trim()) &&
+    (isCustom || !API_KEY_REQUIRED_PROVIDERS.includes(selectedProvider) || !!apiKey);
 
 
 
@@ -51,8 +59,7 @@ export const SetupScreen: React.FC= () => {
     e.preventDefault();
     // F1 ends here — model selection comes next
   };
-
-  const [setupError, setSetupError] = useState<string | null>(null);
+  
 
   useEffect(() => {
     fetch('http://127.0.0.1:8000/providers')
@@ -62,6 +69,8 @@ export const SetupScreen: React.FC= () => {
   }, []);
 
   useEffect(() => {
+    setManualModel('');
+    setBaseUrl('');
     if (!selectedProvider) {
       setModels([]);
       setSelectedModel(null);
@@ -129,114 +138,82 @@ export const SetupScreen: React.FC= () => {
               </div>
 
               {/* Model Selection */}
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500">
-                  MODEL
-                </label>
-
-                <select
-                  value={selectedModel ?? ''}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  disabled={!selectedProvider || modelsLoading}
-                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800
-                            bg-white dark:bg-zinc-900 px-3 py-2 text-sm
-                            disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="" disabled>
-                    {modelsLoading
-                      ? 'Loading models...'
-                      : models.length === 0
-                        ? 'No models available'
-                        : 'Select a model'}
-                  </option>
-
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedProvider &&
-                  ADD_MODEL_PROVIDERS.includes(selectedProvider) &&
-                  !modelsLoading &&
-                  models.length === 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddModel(true)}
-                      className="text-xs text-zinc-500 hover:text-zinc-700 underline"
-                    >
-                      + Add model
-                    </button>
-                )}
-                {showAddModel && (
-                  <div className="mt-4 space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-4">
-                    <div className="space-y-1">
-                      <label className="text-xs text-zinc-500">Model ID</label>
-                      <input
-                        value={newModelId}
-                        onChange={(e) => setNewModelId(e.target.value)}
-                        placeholder="e.g. project-x"
-                        className="w-full rounded border px-3 py-2 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs text-zinc-500">Display Name</label>
-                      <input
-                        value={newModelName}
-                        onChange={(e) => setNewModelName(e.target.value)}
-                        placeholder="ProjectX Chat"
-                        className="w-full rounded border px-3 py-2 text-sm"
-                      />
-                    </div>
-
-                    {selectedProvider === 'custom-openai' && (
-                      <div className="space-y-1">
-                        <label className="text-xs text-zinc-500">Base URL</label>
-                        <input
-                          value={newBaseUrl}
-                          onChange={(e) => setNewBaseUrl(e.target.value)}
-                          placeholder="https://api.deepseek.com/v1"
-                          className="w-full rounded border px-3 py-2 text-sm"
-                        />
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      disabled={!newModelId || !newModelName || addingModel}
-                      onClick={async () => {
-                        setAddingModel(true);
-                        try {
-                          // Refresh models list
-                          const res = await fetch(
-                            `http://127.0.0.1:8000/models?provider=${selectedProvider}`
-                          );
-                          const data = await res.json();
-                          setModels(data);
-
-                          // Reset add-model UI
-                          setShowAddModel(false);
-                          setNewModelId('');
-                          setNewModelName('');
-                          setNewBaseUrl('');
-                        } finally {
-                          setAddingModel(false);
-                        }
-                      }}
-                      className="w-full bg-zinc-800 text-white py-2 rounded text-sm disabled:opacity-50"
-                    >
-                      Add model
-                    </button>
-                  </div>
-                )}
-
-              </div>
-              {selectedProvider &&
-                API_KEY_REQUIRED_PROVIDERS.includes(selectedProvider) && (
+              {isCustom ? (
+                <div className="space-y-3">
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-zinc-500">
-                      API KEY
+                      BASE URL
+                    </label>
+                    <input
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="https://router.huggingface.co/v1"
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800
+                                bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-mono"
+                    />
+                    <p className="text-[10px] text-zinc-400">
+                      Any OpenAI-compatible server: Hugging Face router, DeepSeek,
+                      OpenRouter, Ollama (http://localhost:11434/v1), LM Studio…
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-zinc-500">
+                      MODEL ID
+                    </label>
+                    <input
+                      value={manualModel}
+                      onChange={(e) => setManualModel(e.target.value)}
+                      placeholder="e.g. openai/gpt-oss-120b"
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800
+                                bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-mono"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-zinc-500">
+                    MODEL
+                  </label>
+
+                  <select
+                    value={selectedModel ?? ''}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    disabled={!selectedProvider || modelsLoading}
+                    className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800
+                              bg-white dark:bg-zinc-900 px-3 py-2 text-sm
+                              disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="" disabled>
+                      {modelsLoading ? 'Loading models...' : 'Select a model'}
+                    </option>
+
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+
+                    {selectedProvider && !modelsLoading && (
+                      <option value={MANUAL}>Other (type a model ID)…</option>
+                    )}
+                  </select>
+
+                  {selectedModel === MANUAL && (
+                    <input
+                      value={manualModel}
+                      onChange={(e) => setManualModel(e.target.value)}
+                      placeholder="Exact model ID, e.g. llama-3.3-70b-versatile"
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800
+                                bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-mono"
+                    />
+                  )}
+                </div>
+              )}
+              {selectedProvider &&
+                (isCustom || API_KEY_REQUIRED_PROVIDERS.includes(selectedProvider)) && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-zinc-500">
+                      {isCustom ? 'API KEY (OPTIONAL FOR LOCAL SERVERS)' : 'API KEY'}
                     </label>
                     <input
                       type="password"
@@ -251,33 +228,38 @@ export const SetupScreen: React.FC= () => {
                     </p>
                   </div>
               )}
-              {setupError && <p className="text-xs text-red-500">{setupError}</p>}
+              {setupError && (
+                <p className="text-xs text-red-500">{setupError}</p>
+              )}
               <button
                 type="button"
-                disabled={
-                  !selectedProvider ||
-                  !selectedModel ||
-                  (API_KEY_REQUIRED_PROVIDERS.includes(selectedProvider) && !apiKey) ||
-                  savingConfig
-                }
+                disabled={!canFinish || savingConfig}
                 onClick={async () => {
                   setSavingConfig(true);
                   setSetupError(null);
                   try {
-                    const res = fetch('http://127.0.0.1:8000/config/setup', {
+                    const res = await fetch('http://127.0.0.1:8000/config/setup', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         provider: selectedProvider,
-                        model_id: selectedModel,
+                        model_id: modelToUse,
                         api_key: apiKey,
+                        base_url: isCustom ? baseUrl.trim() : undefined,
                       }),
                     });
-                    if(!(await res).ok){
-                      setSetupError('Setup failed (${res.status}): ${await res.text()}');
+                    if (!res.ok) {
+                      let detail = await res.text();
+                      try {
+                        const j = JSON.parse(detail);
+                        detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail ?? j);
+                      } catch { /* keep raw text */ }
+                      setSetupError(`Setup failed (${res.status}): ${detail}`);
                       return;
                     }
                     window.location.reload();
+                  } catch {
+                    setSetupError('Could not reach the backend. Is it running?');
                   } finally {
                     setSavingConfig(false);
                   }

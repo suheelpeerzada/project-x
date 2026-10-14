@@ -39,6 +39,7 @@ export function useAppConfig() {
     provider: string;
     model_id: string;
     api_key?: string;
+    base_url?: string;
   }) => {
     await api.setup(payload);
 
@@ -63,6 +64,7 @@ export function useAppConfig() {
       await api.verifyConfig();
     } catch { }
 
+    // A 401 skips the sync inside verifyConfig, so always re-pull the status
     await refresh();
   };
 

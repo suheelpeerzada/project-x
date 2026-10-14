@@ -17,6 +17,7 @@ class AddModelRequest(BaseModel):
     provider: str
     model: str
     api_key: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 class SwitchModelRequest(BaseModel):

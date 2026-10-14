@@ -1,5 +1,10 @@
 fastapi
 uvicorn
 requests
-python-dotenv
 keyring
+
+# Attachments (images, PDFs, voice notes) - not wired in yet.
+# Uncomment when the attachments feature is enabled.
+# python-multipart
+# pypdf
+# Pillow

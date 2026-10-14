@@ -4,7 +4,7 @@ from app.registry.models import (
     get_all_models_for_provider,
 )
 from app.persistence.model_store import add_user_model
-
+from app.security import validate_base_url
 router = APIRouter()
 
 @router.get("/models")
@@ -35,9 +35,12 @@ def add_model(payload: dict):
         "provider": provider,
     }
 
-    # Optional fields (for custom / local)
+        # Optional fields (for custom / local)
     if "base_url" in payload:
-        model["base_url"] = payload["base_url"]
+        try:
+            model["base_url"] = validate_base_url(payload["base_url"])
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     add_user_model(model)
     return {"ok": True}

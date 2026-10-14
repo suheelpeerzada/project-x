@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from app.schemas.models import AddModelRequest, SwitchModelRequest
 from app.persistence.config_store import (
     load_config,
@@ -8,7 +9,8 @@ from app.persistence.config_store import (
     insert_new_model,
     switch_model,
 )
-from app.manifest.system import system_state
+from app.manifest.system import system_state, provider_label
+from app.security import validate_base_url
 
 router = APIRouter()
 
@@ -20,28 +22,36 @@ def add_model(payload: AddModelRequest):
 
     config = ensure_registry(config)
 
-    # Reuse a saved key for the same provider if none was supplied
+    custom = payload.provider == "custom-openai"
+    base_url = None
+    if custom:
+        try:
+            base_url = validate_base_url(payload.base_url or "")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base URL: {e}")
+
+    # Reuse a saved key for the same provider. For custom endpoints ONLY reuse a key
+    # saved for the SAME base URL, or one service's key would go to another host.
     api_key = (payload.api_key or "").strip()
     if not api_key:
         for entry in (config.get("models") or {}).values():
-            if entry.get("provider") == payload.provider and entry.get("api_key"):
-                api_key = entry["api_key"]
-                break
-    if not api_key and payload.provider != "local":
-        raise HTTPException(
-            status_code=400,
-            detail=f"An API key is required for {payload.provider}",
-        )
+            if entry.get("provider") != payload.provider or not entry.get("api_key"):
+                continue
+            if custom and entry.get("base_url") != base_url:
+                continue
+            api_key = entry["api_key"]
+            break
+    if not api_key and payload.provider not in ("local", "custom-openai"):
+        raise HTTPException(status_code=400, detail=f"An API key is required for {payload.provider}")
 
-    existing = get_model_by_provider_and_name(config, payload.provider, payload.model)
-
+    existing = get_model_by_provider_and_name(config, payload.provider, payload.model, base_url)
     if existing:
         model_id, _ = existing
-        overwrite_model(config, model_id, payload.provider, payload.model, api_key)
+        overwrite_model(config, model_id, payload.provider, payload.model, api_key, base_url)
         system_state.load()
         return {"model_id": model_id, "message": "Model overwritten"}
 
-    new_id = insert_new_model(config, payload.provider, payload.model, api_key)
+    new_id = insert_new_model(config, payload.provider, payload.model, api_key, base_url)
     system_state.load()
     return {"model_id": new_id, "message": "Model added"}
 
@@ -82,11 +92,9 @@ def list_models():
         model = entry.get("model")
 
         # ---- Human-readable name (same style as system_state) ----
-        provider_label = provider.capitalize() if provider else ""
+        #provider_label = f"{provider_label(provider, entry.get('base_url'))} · {model_label}"
         model_label = model.replace("-", " ").replace("_", " ").title()
-
-        display_name = f"{provider_label} · {model_label}"
-
+        display_name = f"{provider_label(provider, entry.get('base_url'))} · {model_label}"
         formatted.append({
             "id": model_id,
             "provider": provider,
@@ -100,16 +108,18 @@ def list_models():
         })
 
     return formatted
+class DeleteModelRequest(BaseModel):
+    model_id: str
 
 @router.post("/config/models/delete")
-def delete_model(payload: dict):
+def delete_model(payload: DeleteModelRequest):
     """
     Delete a model from the registry.
     Rules:
     - Active model cannot be deleted
     - On success: return updated model list
     """
-    model_id = payload.get("model_id")
+    model_id = payload.model_id
     if not model_id:
         raise HTTPException(status_code=400, detail="model_id is required")
 

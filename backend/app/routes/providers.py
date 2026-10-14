@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.registry.providers import get_available_providers
 from typing import Optional
 from pydantic import BaseModel
 from app.persistence.config_store import load_config
 from app.services.llm import list_models
+from app.security import chat_limiter, provider_limiter, config_limiter
 
 router = APIRouter()
 
@@ -16,7 +17,7 @@ class ListModelsRequest(BaseModel):
     api_key: Optional[str] = None   # omitted → reuse a saved key for this provider
 
 
-@router.post("/providers/models")
+@router.post("/providers/models", dependencies=[Depends(provider_limiter)])
 def provider_models(payload: ListModelsRequest):
     key = payload.api_key
     config = load_config() or {}

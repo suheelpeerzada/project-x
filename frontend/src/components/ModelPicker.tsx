@@ -24,6 +24,8 @@ export interface AddModelPayload {
   model: string;
   /** Omitted => backend should reuse the key already saved for this provider */
   apiKey?: string;
+  /** Custom (OpenAI-compatible) endpoints only */
+  baseUrl?: string;
 }
 
 interface ModelPickerProps {
@@ -47,6 +49,11 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ onAdd }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  // Manual entry (a model that is not in the list) and custom endpoints
+  const [manualId, setManualId] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const isCustom = provider === 'custom-openai';
+
   useEffect(() => {
     api.getProviders().then(setProviders).catch(() => setProviders([]));
   }, []);
@@ -57,6 +64,8 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ onAdd }) => {
     setSelected(null);
     setError(null);
     setFilter('');
+    setManualId('');
+    setBaseUrl('');
   }, [provider]);
 
   const loadModels = async () => {
@@ -69,6 +78,13 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ onAdd }) => {
         provider,
         api_key: apiKey.trim() || undefined,
       });
+      // Guard: a wrong response shape used to fail silently (list never appeared)
+      if (!res || !Array.isArray(res.models)) {
+        throw new Error(
+          'Unexpected response from the backend (no model list). ' +
+            'Restart the backend and check POST /providers/models in /docs.'
+        );
+      }
       setModels(res.models);
     } catch (err) {
       setModels(null);
@@ -110,6 +126,29 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ onAdd }) => {
     }
   };
 
+  // Add a model the user typed in (not from the live list)
+  const addManual = async () => {
+    const model = manualId.trim();
+    if (!provider || !model) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await onAdd({
+        provider,
+        model,
+        apiKey: apiKey.trim() || undefined,
+        baseUrl: isCustom ? baseUrl.trim() : undefined,
+      });
+      setManualId('');
+      setApiKey('');
+      if (!isCustom && models) await loadModels();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add model');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Provider */}
@@ -131,8 +170,49 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ onAdd }) => {
         </select>
       </div>
 
+      {/* Custom (OpenAI-compatible) endpoint: base URL + model ID + optional key */}
+      {isCustom && (
+        <div className="space-y-3">
+          {[
+            ['BASE URL', baseUrl, setBaseUrl, 'https://router.huggingface.co/v1', 'text'],
+            ['MODEL ID', manualId, setManualId, 'e.g. openai/gpt-oss-120b', 'text'],
+            [
+              'API KEY (OPTIONAL FOR LOCAL SERVERS)',
+              apiKey,
+              setApiKey,
+              'Leave blank for Ollama / LM Studio',
+              'password',
+            ],
+          ].map(([label, value, set, placeholder, type]: any) => (
+            <div key={label} className="space-y-2">
+              <label className="text-xs font-medium text-zinc-500">{label}</label>
+              <input
+                type={type}
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                placeholder={placeholder}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-mono"
+              />
+            </div>
+          ))}
+          <p className="text-[10px] text-zinc-400">
+            Works with any OpenAI-compatible server: Hugging Face router, DeepSeek,
+            OpenRouter, Ollama (http://localhost:11434/v1), LM Studio…
+          </p>
+          <button
+            type="button"
+            onClick={addManual}
+            disabled={!baseUrl.trim() || !manualId.trim() || adding}
+            className="w-full flex items-center justify-center gap-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+          >
+            {adding && <Loader2 size={14} className="animate-spin" />}
+            Add model
+          </button>
+        </div>
+      )}
+
       {/* Key + load */}
-      {provider && (
+      {provider && !isCustom && (
         <div className="space-y-2">
           <label className="text-xs font-medium text-zinc-500">API KEY</label>
           <div className="flex gap-2">
@@ -225,6 +305,31 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ onAdd }) => {
             {adding && <Loader2 size={14} className="animate-spin" />}
             Add selected model
           </button>
+        </div>
+      )}
+
+      {/* Not in the list? Type the exact model ID */}
+      {provider && !isCustom && (
+        <div className="space-y-2 pt-1">
+          <label className="text-xs font-medium text-zinc-500">
+            NOT IN THE LIST? TYPE A MODEL ID
+          </label>
+          <div className="flex gap-2">
+            <input
+              value={manualId}
+              onChange={(e) => setManualId(e.target.value)}
+              placeholder="e.g. llama-3.3-70b-versatile"
+              className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-mono"
+            />
+            <button
+              type="button"
+              onClick={addManual}
+              disabled={!manualId.trim() || adding}
+              className="px-3 py-2 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
         </div>
       )}
     </div>

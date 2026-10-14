@@ -77,6 +77,7 @@ export const api = {
     provider: string;
     model_id: string;
     api_key?: string;
+    base_url?: string;
   }) =>
     request<{ ok: true }>('/config/setup', {
       method: 'POST',
@@ -97,20 +98,25 @@ export const api = {
   verifyConfig: async () => {
     // verified=false means "could not confirm" (network, rate limit, model gone);
     // `detail` then explains why.
-    const res = await request<{
-      ok: true;
-      verified?: boolean;
-      detail?: string;
-    }>('/config/verify', {
-      method: 'POST',
-    });
-
-    // force frontend to sync with backend
-    if (onAuthStateChange) {
-      await onAuthStateChange();
+    try {
+      return await request<{
+        ok: true;
+        verified?: boolean;
+        detail?: string;
+      }>('/config/verify', {
+        method: 'POST',
+      });
+    } finally {
+      // force frontend to sync with backend, even after a 401
+      // (the backend records auth_ok=false, so the lock reason stays current)
+      if (onAuthStateChange) {
+        try {
+          await onAuthStateChange();
+        } catch {
+          /* never mask the original result/error */
+        }
+      }
     }
-
-    return res;
   },
 
   // Registry: Load backend model registry
@@ -164,7 +170,12 @@ export const api = {
   clearHistory: () => request<{ ok: true }>('/history', { method: 'DELETE' }),
 
   // Registry: Add a model (omit api_key to reuse a saved key for the provider)
-  addModel: (payload: { provider: string; model: string; api_key?: string }) =>
+  addModel: (payload: {
+    provider: string;
+    model: string;
+    api_key?: string;
+    base_url?: string;
+  }) =>
     request<{ model_id: string; message: string }>('/config/models/add', {
       method: 'POST',
       body: JSON.stringify(payload),

@@ -1,7 +1,13 @@
 from typing import Optional, Dict, Any
 from app.persistence.config_store import load_config
 import uuid
+from urllib.parse import urlsplit
 
+def provider_label(provider, base_url=None) -> str:
+    """'Groq' for built-ins, the host name for custom endpoints."""
+    if provider == "custom-openai":
+        return urlsplit(base_url or "").hostname or "Custom"
+    return provider.capitalize() if provider else ""
 
 class SystemState:
     """
@@ -20,6 +26,7 @@ class SystemState:
         self._active_model_id: Optional[str] = None
         self._models: Dict[str, Dict[str, Any]] = {}
         self.last_error: Optional[dict] = None 
+        self.base_url = None
 
     def load(self) -> None:
         """
@@ -86,11 +93,13 @@ class SystemState:
         self.api_key_present = bool(model_entry.get("api_key"))
         self.auth_ok = model_entry.get("auth_ok")
         self.last_error = model_entry.get("last_error")
+        self.base_url = model_entry.get("base_url")
 
+        keyless_ok = self.provider in ("local", "custom-openai")
         self.configured = bool(
-            self.provider and
-            self.model and
-            (self.api_key_present or self.provider == "local")
+            self.provider and self.model
+            and (self.api_key_present or keyless_ok)
+            and (self.provider != "custom-openai" or self.base_url)
         )
 
     def _reset(self) -> None:
@@ -102,6 +111,7 @@ class SystemState:
         self._active_model_id = None
         self._models = {}
         self.last_error: Optional[dict] = None 
+        self.base_url = None
 
     def as_dict(self):
         return {
@@ -120,12 +130,12 @@ class SystemState:
         if not self.provider or not self.model:
             return None
 
-        provider_label = self.provider.capitalize()
+        label = provider_label(self.provider, self.base_url)
 
         model_label = self.model.replace("-", " ").replace("_", " ")
         model_label = model_label.title()
 
-        return f"{provider_label} · {model_label}"
+        return f"{label} · {model_label}"
 
 
 # Singleton system state (imported everywhere)
